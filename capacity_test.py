@@ -14,8 +14,9 @@ from pymeasure.experiment import IntegerParameter, FloatParameter, Parameter
 
 class RandomProcedure(Procedure):
 
-    iterations = IntegerParameter('Loop Iterations', default=100)
-    delay = FloatParameter('Delay Time', units='s', default=0.2)
+    iterations = FloatParameter('Nominal', units='Ah', default=17)
+    delay = FloatParameter('Rate', units='C', default=0.2)
+    delay = FloatParameter('Rate', units='C', default=0.2)
     seed = Parameter('Random Seed', default='12345')
 
     DATA_COLUMNS = ['Iteration', 'Random Number']
