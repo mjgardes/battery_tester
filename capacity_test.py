@@ -16,14 +16,14 @@ from pymeasure.experiment import IntegerParameter, FloatParameter, Parameter
 class RandomProcedure(Procedure):
 
     nominal_capacity = FloatParameter('Nominal', units='Ah', default=25.3)
-    charge_rate = FloatParameter('Charge rate', units='C', default=0.5)
+    charge_rate = FloatParameter('Charge rate', units='C', default=0.6)
     discharge_rate = FloatParameter('Discharge rate', units='C', default=0.5)
     charge_voltage = FloatParameter('Charge limit', units='V', default=3.8)
-    float_charge_voltage  = FloatParameter('Float voltage', units='V', default=3.45)
+    float_charge_voltage  = FloatParameter('Float voltage', units='V', default=3.6)
     float_current_cutoff = FloatParameter('Float cutoff', units='A', default=0.55)
     discharge_voltage = FloatParameter('Discharge limit', units='V', default=2)
 
-    DATA_COLUMNS = ['Time', 'Voltage', 'Current', 'Charge', 'Ah_V', 'SoC']
+    DATA_COLUMNS = ['Time', 'Discharge_time', 'Voltage', 'Current', 'Charge', 'Ah_V', 'SoC']
 
     def startup(self):
         rm = pyvisa.ResourceManager()
@@ -104,6 +104,7 @@ class RandomProcedure(Procedure):
 
                 data = {
                     'Time': time_elapsed,
+                    'Discharge_time': np.nan,
                     'Voltage': voltage,
                     'Current': current,
                     'Charge': charge,
@@ -131,16 +132,14 @@ class RandomProcedure(Procedure):
             self.boss.write('SV')
             log.debug(self.boss.read_raw())
             log.debug(self.boss.read_raw())
-            log.info('Program current limit to 1/2 ful scale (0x80)')
-            self.boss.write('PL+80')
+            log.info('Program current limit to 3/4 ful scale (0xC0)')
+            self.boss.write('PL+C0')
 
             log.debug(self.boss.read_raw())
             log.debug(self.boss.read_raw())
-            log.info(f'Float charging at {self.float_charge_voltage:.3n} V')
-            self.boss.write(f'PC+{self.float_charge_voltage:.3f}V')
+            log.info(f'Float charging at {self.charge_voltage:.3n} V')
+            self.boss.write(f'PC+{self.charge_voltage:.3f}V')
             log.debug(self.boss.read())
-
-            time_elapsed = 0
 
             buffer_empty = False
             while buffer_empty == False:
@@ -153,10 +152,10 @@ class RandomProcedure(Procedure):
                     log.debug('Purged 1 line from buffer')
                     log.debug('Residue in buffer')
 
-            float_timer = 0
+            float_start = time_elapsed
             float_seconds = 30 * 60
 
-            while float_timer < float_seconds:
+            while time_elapsed < float_start + float_seconds:
                 voltage = self.boss.query_ascii_values('MV')[0]
                 log.debug(self.boss.read())
                 current = self.boss.query_ascii_values('MI')[0]
@@ -176,6 +175,7 @@ class RandomProcedure(Procedure):
 
                 data = {
                     'Time': time_elapsed,
+                    'Discharge_time': np.nan,
                     'Voltage': voltage,
                     'Current': current,
                     'Charge': charge,
@@ -185,7 +185,7 @@ class RandomProcedure(Procedure):
 
                 self.emit('results', data)
                 log.debug("Emitting results: %s" % data)
-                self.emit('progress', 100 * float_timer / float_seconds)
+                self.emit('progress', 100 * (time_elapsed-float_start) / float_seconds)
 
                 if current <= self.float_current_cutoff:
                     log.info('Pack charged')
@@ -204,12 +204,11 @@ class RandomProcedure(Procedure):
             log.debug(self.boss.read_raw())
             log.debug(self.boss.read_raw())
 
-            time_elapsed = 0
-            last_time = 0
+            discharge_start = time_elapsed
+            last_time = 0.0
+            charge = 0.0
             log.info("Clock time: %f" % test_start_time)
             
-
-
             buffer_empty = False
             while buffer_empty == False:
                 try:
@@ -240,11 +239,12 @@ class RandomProcedure(Procedure):
 
                 data = {
                     'Time': time_elapsed,
+                    'Discharge_time': time_elapsed - discharge_start,
                     'Voltage': voltage,
                     'Current': current,
                     'Charge': charge,
                     'Ah_V': Ah_V,
-                    'SoC': 100 * (1 - (charge / self.nominal_capacity))
+                    'SoC': 100 * (1 + (charge / self.nominal_capacity))
                 }
 
                 self.emit('results', data)
@@ -273,8 +273,8 @@ class MainWindow(ManagedWindow):
     def __init__(self):
         super().__init__(
             procedure_class=RandomProcedure,
-            inputs=['nominal_capacity', 'charge_rate', 'discharge_rate', 'charge_voltage', 'discharge_voltage'],
-            displays=['nominal_capacity', 'charge_rate', 'discharge_rate', 'charge_voltage', 'discharge_voltage'],
+            inputs=['nominal_capacity', 'charge_rate', 'discharge_rate', 'charge_voltage', 'discharge_voltage', 'float_charge_voltage', 'float_current_cutoff'],
+            displays=['nominal_capacity', 'charge_rate', 'discharge_rate', 'charge_voltage', 'discharge_voltage', 'float_charge_voltage', 'float_current_cutoff'],
             x_axis='Time',
             y_axis='Voltage'
         )
