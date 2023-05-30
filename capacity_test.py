@@ -56,7 +56,8 @@ class RandomProcedure(Procedure):
         last_time = 0
         charge = 0.0
         last_voltage = 0.0
-        timeout_seconds = 1.3 * 3600 / self.charge_rate
+        charge_timeout_seconds = 1.3 * 3600 / self.charge_rate
+        discharge_timeout_seconds = 1.3 * 3600 / self.charge_rate
 
         if self.should_stop():
             log.warning("Skipping recharge")
@@ -85,7 +86,7 @@ class RandomProcedure(Procedure):
                     log.debug('Purged 1 line from buffer')
                     log.debug('Residue in buffer')
 
-            while time_elapsed < timeout_seconds:
+            while time_elapsed < charge_timeout_seconds:
                 voltage = self.boss.query_ascii_values('MV')[0]
                 log.debug(self.boss.read())
                 current = self.boss.query_ascii_values('MI')[0]
@@ -115,7 +116,7 @@ class RandomProcedure(Procedure):
 
                 self.emit('results', data)
                 log.debug("Emitting results: %s" % data)
-                self.emit('progress', 100 * time_elapsed / timeout_seconds)
+                self.emit('progress', 100 * time_elapsed / charge_timeout_seconds)
 
                 if voltage >= self.charge_voltage:
                     log.info('Pack charged')
@@ -230,7 +231,7 @@ class RandomProcedure(Procedure):
                     log.debug('Purged 1 line from buffer')
                     log.debug('Residue in buffer')
 
-            while time_elapsed - discharge_start  < timeout_seconds:
+            while time_elapsed - discharge_start  < discharge_timeout_seconds:
                 voltage = self.boss.query_ascii_values('MV')[0]
                 log.debug(self.boss.read())
                 current = self.boss.query_ascii_values('MI')[0]
@@ -259,7 +260,7 @@ class RandomProcedure(Procedure):
 
                 self.emit('results', data)
                 log.debug("Emitting results: %s" % data)
-                self.emit('progress', 100 * (time_elapsed - discharge_start) / timeout_seconds)
+                self.emit('progress', 100 * (time_elapsed - discharge_start) / discharge_timeout_seconds)
 
                 if voltage <= self.discharge_voltage:
                     log.info('Pack discharged')
