@@ -203,7 +203,7 @@ class RandomProcedure(Procedure):
             log.debug(self.boss.read_raw())
             log.debug(self.boss.read_raw())
             log.info(f'Discharging at {self.discharge_rate * self.nominal_capacity:.3n}A')
-            self.boss.write(f'PC-%{self.discharge_rate * self.nominal_capacity:.3f}')
+            self.boss.write(f'PC-%{self.discharge_rate * self.nominal_capacity:.3f}A')
             log.debug(self.boss.read_raw())
             log.debug(self.boss.read_raw())
 
