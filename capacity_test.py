@@ -210,7 +210,6 @@ class RandomProcedure(Procedure):
             discharge_start = time_elapsed
             last_time = perf_counter() - test_start_time
             charge = 0.0
-            log.info("Clock time: %f" % test_start_time)
             
             buffer_empty = False
             while buffer_empty == False:
