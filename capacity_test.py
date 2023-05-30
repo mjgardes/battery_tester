@@ -199,6 +199,9 @@ class RandomProcedure(Procedure):
         if self.should_stop():
             log.warning("Skipping discharge test")
         else:
+            self.boss.write('SI')
+            log.debug(self.boss.read_raw())
+            log.debug(self.boss.read_raw())
             log.info(f'Discharging at {self.discharge_rate * self.nominal_capacity:.3n}A')
             self.boss.write(f'PC-%{self.discharge_rate * self.nominal_capacity:.3f}')
             log.debug(self.boss.read_raw())
