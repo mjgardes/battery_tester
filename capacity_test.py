@@ -17,7 +17,7 @@ class RandomProcedure(Procedure):
 
     nominal_capacity = FloatParameter('Nominal', units='Ah', default=25.3)
     charge_rate = FloatParameter('Charge rate', units='C', default=0.6)
-    discharge_rate = FloatParameter('Discharge rate', units='C', default=0.5)
+    discharge_rate = FloatParameter('Discharge rate', units='C', default=0.2)
     charge_voltage = FloatParameter('Charge limit', units='V', default=3.8)
     float_charge_voltage  = FloatParameter('Float voltage', units='V', default=3.6)
     float_current_cutoff = FloatParameter('Float cutoff', units='A', default=0.55)
@@ -40,11 +40,6 @@ class RandomProcedure(Procedure):
         log.debug(self.boss.read_raw())
         log.debug(self.boss.read_raw())
 
-        log.info('Program limit to 1/4 ful scale (0x40)')
-        self.boss.write('PL+40')
-        log.debug(self.boss.read_raw())
-        log.debug(self.boss.read_raw())
-
         log.info('Set current control mode')
         self.boss.write('SI')
         log.debug(self.boss.read_raw())
@@ -61,11 +56,17 @@ class RandomProcedure(Procedure):
         last_time = 0
         charge = 0.0
         last_voltage = 0.0
-        timeout_seconds = self.nominal_capacity * 3600 / self.charge_rate
+        timeout_seconds = 1.3 * 3600 / self.charge_rate
 
         if self.should_stop():
             log.warning("Skipping recharge")
         else:
+
+            log.info('Program voltage limit to 1/4 ful scale (0x40)')
+            self.boss.write('PL+40')
+            log.debug(self.boss.read_raw())
+            log.debug(self.boss.read_raw())
+
             log.info(f'Charging at {self.charge_rate * self.nominal_capacity:.3n}A')
             self.boss.write(f'PC+{self.charge_rate * self.nominal_capacity:.3f}A')
             log.debug(self.boss.read())
@@ -84,7 +85,7 @@ class RandomProcedure(Procedure):
                     log.debug('Purged 1 line from buffer')
                     log.debug('Residue in buffer')
 
-            while time_elapsed < timeout_seconds * 2:
+            while time_elapsed < timeout_seconds:
                 voltage = self.boss.query_ascii_values('MV')[0]
                 log.debug(self.boss.read())
                 current = self.boss.query_ascii_values('MI')[0]
@@ -199,11 +200,18 @@ class RandomProcedure(Procedure):
         if self.should_stop():
             log.warning("Skipping discharge test")
         else:
+            log.info('Setting current control mode')
             self.boss.write('SI')
             log.debug(self.boss.read_raw())
             log.debug(self.boss.read_raw())
+
+            log.info('Program limit to 1/4 ful scale (0x40)')
+            self.boss.write('PL+40')
+            log.debug(self.boss.read_raw())
+            log.info(self.boss.read_raw())
+
             log.info(f'Discharging at {self.discharge_rate * self.nominal_capacity:.3n}A')
-            self.boss.write(f'PC-%{self.discharge_rate * self.nominal_capacity:.3f}A')
+            self.boss.write(f'PC-{self.discharge_rate * self.nominal_capacity:.3f}')
             log.debug(self.boss.read_raw())
             log.debug(self.boss.read_raw())
 
@@ -222,7 +230,7 @@ class RandomProcedure(Procedure):
                     log.debug('Purged 1 line from buffer')
                     log.debug('Residue in buffer')
 
-            while time_elapsed < timeout_seconds:
+            while time_elapsed - discharge_start  < timeout_seconds:
                 voltage = self.boss.query_ascii_values('MV')[0]
                 log.debug(self.boss.read())
                 current = self.boss.query_ascii_values('MI')[0]
@@ -251,7 +259,7 @@ class RandomProcedure(Procedure):
 
                 self.emit('results', data)
                 log.debug("Emitting results: %s" % data)
-                self.emit('progress', 100 * time_elapsed / timeout_seconds)
+                self.emit('progress', 100 * (time_elapsed - discharge_start) / timeout_seconds)
 
                 if voltage <= self.discharge_voltage:
                     log.info('Pack discharged')
