@@ -205,7 +205,7 @@ class RandomProcedure(Procedure):
             log.debug(self.boss.read_raw())
 
             discharge_start = time_elapsed
-            last_time = perf_counter()
+            last_time = perf_counter() - test_start_time
             charge = 0.0
             log.info("Clock time: %f" % test_start_time)
             
