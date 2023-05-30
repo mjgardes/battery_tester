@@ -109,7 +109,7 @@ class RandomProcedure(Procedure):
                     'Current': current,
                     'Charge': charge,
                     'Ah_V': Ah_V,
-                    'SoC': 100 * charge / self.nominal_capacity
+                    'SoC': np.nan
                 }
 
                 self.emit('results', data)
