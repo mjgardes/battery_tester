@@ -25,6 +25,31 @@ class RandomProcedure(Procedure):
 
     DATA_COLUMNS = ['Time', 'Discharge_time', 'Voltage', 'Current', 'Charge', 'Ah_V', 'SoC']
 
+    def set(self, instrument, command, log_text):
+        log.info(log_text)
+        instrument.write(command)
+        log.debug(instrument.read_raw())
+        log.debug(instrument.read_raw())
+
+    def fetch(self, instrument, command, log_text = None):
+        if log_text != None:
+            log.debug(log_text)
+        result = instrument.query_ascii_values(command)[0]
+        log.debug(instrument.read())
+        return result
+
+    def clear_buffer(self, instrument):
+        buffer_empty = False
+        while buffer_empty == False:
+            try:
+                log.debug(instrument.read())
+            except:
+                log.debug('Buffer empty')
+                buffer_empty = True
+            else:
+                log.debug('Purged 1 line from buffer')
+                log.debug('Residue in buffer')
+
     def startup(self):
         rm = pyvisa.ResourceManager()
         self.boss = rm.open_resource('ASRL/dev/ttyUSB_Gearmo::INSTR')
@@ -32,23 +57,11 @@ class RandomProcedure(Procedure):
         self.boss.write_termination = '\r\n'
         self.boss.baud_rate = 9600
 
-        log.info('Set Backtalk 0')
-        self.boss.write('SB0')
-
-        log.info('Setting Remote mode')
-        self.boss.write('SR')
-        log.debug(self.boss.read_raw())
-        log.debug(self.boss.read_raw())
-
-        log.info('Set current control mode')
-        self.boss.write('SI')
-        log.debug(self.boss.read_raw())
-        log.debug(self.boss.read_raw())
-
-        log.info('Zero setpoint')
-        self.boss.write('PC0')
-        log.debug(self.boss.read_raw())
-        log.debug(self.boss.read_raw())
+        self.set(self.boss, 'SB0', 'Set Backtalk 0')
+        self.set(self.boss, 'SR', 'Setting Remote mode')
+        self.set(self.boss, 'PL+40', 'Program limit to 1/4 ful scale (0x40)')
+        self.set(self.boss, 'SI', 'Set current control mode')
+        self.set(self.boss, 'PC0', 'Zero setpoint')
 
     def execute(self):
         test_start_time = perf_counter()
@@ -56,41 +69,21 @@ class RandomProcedure(Procedure):
         last_time = 0
         charge = 0.0
         last_voltage = 0.0
-        charge_timeout_seconds = 1.3 * 3600 / self.charge_rate
-        discharge_timeout_seconds = 1.3 * 3600 / self.discharge_rate
+        timeout_seconds = 1.5 * 3600 / self.charge_rate
 
         if self.should_stop():
             log.warning("Skipping recharge")
         else:
-
-            log.info('Program voltage limit to 1/4 ful scale (0x40)')
-            self.boss.write('PL+40')
-            log.debug(self.boss.read_raw())
-            log.debug(self.boss.read_raw())
-
-            log.info(f'Charging at {self.charge_rate * self.nominal_capacity:.3n}A')
-            self.boss.write(f'PC+{self.charge_rate * self.nominal_capacity:.3f}A')
-            log.debug(self.boss.read())
+            self.set(self.boss, f'PC+{self.charge_rate * self.nominal_capacity:.3f}A', f'Charging at {self.charge_rate * self.nominal_capacity:.3n}A') 
 
             time_elapsed = 0
             last_time = 0
 
-            buffer_empty = False
-            while buffer_empty == False:
-                try:
-                    log.debug(self.boss.read())
-                except:
-                    log.debug('Buffer empty')
-                    buffer_empty = True
-                else:
-                    log.debug('Purged 1 line from buffer')
-                    log.debug('Residue in buffer')
+            self.clear_buffer(self.boss)
 
-            while time_elapsed < charge_timeout_seconds:
-                voltage = self.boss.query_ascii_values('MV')[0]
-                log.debug(self.boss.read())
-                current = self.boss.query_ascii_values('MI')[0]
-                log.debug(self.boss.read())
+            while time_elapsed < timeout_seconds * 2:
+                voltage = self.fetch(self.boss, 'MV')[0]
+                current = self.fetch(self.boss, 'MI')[0]
 
                 time_elapsed = perf_counter() - test_start_time
                 time_interval = time_elapsed - last_time
@@ -116,7 +109,7 @@ class RandomProcedure(Procedure):
 
                 self.emit('results', data)
                 log.debug("Emitting results: %s" % data)
-                self.emit('progress', 100 * time_elapsed / charge_timeout_seconds)
+                self.emit('progress', 100 * time_elapsed / timeout_seconds)
 
                 if voltage >= self.charge_voltage:
                     log.info('Pack charged')
@@ -130,38 +123,18 @@ class RandomProcedure(Procedure):
         if self.should_stop():
             log.warning("Skipping float charge")
         else:
-            log.info('Set to voltage control mode')
-            self.boss.write('SV')
-            log.debug(self.boss.read_raw())
-            log.debug(self.boss.read_raw())
-            log.info('Program current limit to 3/4 ful scale (0xC0)')
-            self.boss.write('PL+C0')
+            self.set(self.boss, 'SV', 'Set to voltage control mode')
+            self.set(self.boss, 'PL+C0', 'Program current limit to 3/4 ful scale (0xC0)')
+            self.set(self.boss, f'PC+{self.charge_voltage:.3f}', f'Float charging at {self.charge_voltage:.3n} V')
 
-            log.debug(self.boss.read_raw())
-            log.debug(self.boss.read_raw())
-            log.info(f'Float charging at {self.charge_voltage:.3n} V')
-            self.boss.write(f'PC+{self.charge_voltage:.3f}V')
-            log.debug(self.boss.read())
-
-            buffer_empty = False
-            while buffer_empty == False:
-                try:
-                    log.debug(self.boss.read())
-                except:
-                    log.debug('Buffer empty')
-                    buffer_empty = True
-                else:
-                    log.debug('Purged 1 line from buffer')
-                    log.debug('Residue in buffer')
+            self.clear_buffer(self.boss)
 
             float_start = time_elapsed
             float_seconds = 30 * 60
 
             while time_elapsed < float_start + float_seconds:
-                voltage = self.boss.query_ascii_values('MV')[0]
-                log.debug(self.boss.read())
-                current = self.boss.query_ascii_values('MI')[0]
-                log.debug(self.boss.read())
+                voltage = self.fetch(self.boss, 'MV')[0]
+                current = self.fetch(self.boss, 'MI')[0]
 
                 time_elapsed = perf_counter() - test_start_time
                 time_interval = time_elapsed - last_time
@@ -193,49 +166,27 @@ class RandomProcedure(Procedure):
                     log.info('Pack charged')
                     break
 
-                sleep(2)
                 if self.should_stop():
                     log.warning("Caught the stop flag in the procedure")
                     break
-        
+
+                sleep(2)
+
         if self.should_stop():
             log.warning("Skipping discharge test")
         else:
-            log.info('Setting current control mode')
-            self.boss.write('SI')
-            log.debug(self.boss.read_raw())
-            log.debug(self.boss.read_raw())
-
-            log.info('Program limit to 1/4 ful scale (0x40)')
-            self.boss.write('PL+40')
-            log.debug(self.boss.read_raw())
-            log.info(self.boss.read_raw())
-
-            log.info(f'Discharging at {self.discharge_rate * self.nominal_capacity:.3n}A')
-            self.boss.write(f'PC-{self.discharge_rate * self.nominal_capacity:.3f}')
-            log.debug(self.boss.read_raw())
-            log.debug(self.boss.read_raw())
+            self.set(self.boss, 'SI', 'Setting current control mode')
+            self.set(self.boss, f'PC-%{self.discharge_rate * self.nominal_capacity:.3f}', f'Discharging at {self.discharge_rate * self.nominal_capacity:.3n}A')
 
             discharge_start = time_elapsed
             last_time = perf_counter() - test_start_time
             charge = 0.0
             
-            buffer_empty = False
-            while buffer_empty == False:
-                try:
-                    log.debug(self.boss.read())
-                except:
-                    log.debug('Buffer empty')
-                    buffer_empty = True
-                else:
-                    log.debug('Purged 1 line from buffer')
-                    log.debug('Residue in buffer')
+            self.clear_buffer(self.boss)
 
-            while time_elapsed - discharge_start  < discharge_timeout_seconds:
-                voltage = self.boss.query_ascii_values('MV')[0]
-                log.debug(self.boss.read())
-                current = self.boss.query_ascii_values('MI')[0]
-                log.debug(self.boss.read())
+            while time_elapsed < timeout_seconds:
+                voltage = self.fetch(self.boss, 'MV')[0]
+                current = self.fetch(self.boss, 'MI')[0]
 
                 time_elapsed = perf_counter() - test_start_time
                 time_interval = time_elapsed - last_time
@@ -260,24 +211,20 @@ class RandomProcedure(Procedure):
 
                 self.emit('results', data)
                 log.debug("Emitting results: %s" % data)
-                self.emit('progress', 100 * (time_elapsed - discharge_start) / discharge_timeout_seconds)
+                self.emit('progress', 100 * time_elapsed / timeout_seconds)
 
                 if voltage <= self.discharge_voltage:
                     log.info('Pack discharged')
                     break
 
-                sleep(2)
                 if self.should_stop():
                     log.warning("Caught the stop flag in the procedure")
                     break
-        
-        log.info('Setting current to zero')
-        self.boss.write('SI')
-        log.debug(self.boss.read_raw())
-        log.debug(self.boss.read_raw())
-        self.boss.write('PC0')
-        log.info(self.boss.read())
-        log.debug(self.boss.read_raw())
+
+                sleep(2)
+
+        self.set(self.boss, 'SI', 'Setting current control mode')
+        self.fetch(self.boss, 'PC0', 'Setting current to zero')
 
 class MainWindow(ManagedWindow):
 
