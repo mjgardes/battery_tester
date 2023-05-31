@@ -57,7 +57,7 @@ class RandomProcedure(Procedure):
         charge = 0.0
         last_voltage = 0.0
         charge_timeout_seconds = 1.3 * 3600 / self.charge_rate
-        discharge_timeout_seconds = 1.3 * 3600 / self.charge_rate
+        discharge_timeout_seconds = 1.3 * 3600 / self.discharge_rate
 
         if self.should_stop():
             log.warning("Skipping recharge")
