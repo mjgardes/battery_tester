@@ -173,7 +173,7 @@ class RandomProcedure(Procedure):
             last_time = perf_counter() - test_start_time
             charge = 0.0
 
-            while time_elapsed < timeout_seconds:
+            while time_elapsed < discharge_start + timeout_seconds:
                 voltage = -self.fetch(self.fluke, 'VAL1?')
                 current = -setpoint
 
@@ -200,7 +200,7 @@ class RandomProcedure(Procedure):
 
                 self.emit('results', data)
                 log.debug("Emitting results: %s" % data)
-                self.emit('progress', 100 * time_elapsed / timeout_seconds)
+                self.emit('progress', 100 * (time_elapsed - discharge_start) / timeout_seconds)
 
                 if voltage <= self.discharge_voltage:
                     log.info('Pack discharged')
